@@ -1,5 +1,7 @@
 # faas-containerd
 
+[![Build Status](https://travis-ci.com/alexellis/faas-containerd.svg?branch=master)](https://travis-ci.com/alexellis/faas-containerd)
+
 [OpenFaaS](https://github.com/openfaas/faas) provider for containerd - single node / edge workloads
 
 What's the use-case?
@@ -49,49 +51,173 @@ Goals:
 
 You need a Linux computer, VM, or bare-metal cloud host.
 
+### Get some build dependencies
+
 I used Ubuntu 18.04 LTS on [Packet.com using the c1.small.x86](https://www.packet.com/cloud/servers/c1-small/) host. You can use [multipass.run](https://multipass.run) to get an Ubuntu host on any OS - Windows, MacOS, or Linux.
 
-Install [containerd](https://github.com/containerd/containerd):
-
-```
+```sh
 sudo apt update && \
-  sudo apt install -qy containerd golang runc bridge-utils ethtool tmux git
+  sudo apt install -qy runc \
+  	bridge-utils \
+	tmux git \
+  	build-essential \
+	libbtrfs-dev libseccomp-dev
 ```
 
-Check containerd started:
+### Install Go 1.12 (x86_64)
 
 ```sh
-systemctl status containerd
+curl -SLsf https://dl.google.com/go/go1.12.14.linux-amd64.tar.gz > go.tgz
+sudo rm -rf /usr/local/go/
+sudo mkdir -p /usr/local/go/
+sudo tar -xvf go.tgz -C /usr/local/go/ --strip-components=1
+
+export GOPATH=$HOME/go/
+export PATH=$PATH:/usr/local/go/bin/
+
+go version
 ```
 
-Enable forwarding:
+### Or on Raspberry Pi (armhf)
 
 ```sh
-/sbin/sysctl -w net.ipv4.conf.all.forwarding=1
+curl -SLsf https://dl.google.com/go/go1.12.14.linux-armv6l.tar.gz > go.tgz
+sudo rm -rf /usr/local/go/
+sudo mkdir -p /usr/local/go/
+sudo tar -xvf go.tgz -C /usr/local/go/ --strip-components=1
+
+export GOPATH=$HOME/go/
+export PATH=$PATH:/usr/local/go/bin/
+
+go version
 ```
 
-Get netns
+### Get containerd
+
+* Install containerd (or build from source)
+
+> Note: This can only be run on x86_64
+
+```sh
+export VER=1.3.2
+curl -sLSf https://github.com/containerd/containerd/releases/download/v$VER/containerd-$VER.linux-amd64.tar.gz > /tmp/containerd.tar.gz \
+  && sudo tar -xvf /tmp/containerd.tar.gz -C /usr/local/bin/ --strip-components=1
+
+containerd -version
+```
+
+* Or clone / build / install [containerd](https://github.com/containerd/containerd) from source:
 
 ```sh
 export GOPATH=$HOME/go/
+mkdir -p $GOPATH/src/github.com/containerd
+cd $GOPATH/src/github.com/containerd
+git clone https://github.com/containerd/containerd
+cd containerd
+git fetch origin --tags
+git checkout v1.3.2
 
-go get -u github.com/genuinetools/netns
-sudo mv $GOPATH/bin/netns /usr/bin/
+make
+sudo make install
+
+containerd --version
 ```
 
-Build and run
+Kill any old containerd version:
 
 ```sh
-export GOPATH=$HOME/go/
-
-mkdir -p $GOPATH/src/github.com/alexellis/faas-containerd
-cd $GOPATH/src/github.com/alexellis/faas-containerd
-git clone https://github.com/alexellis/faas-containerd
-cd faas-containerd
-go build && sudo function_uptime=120m ./faas-containerd
+# Kill any old version
+sudo killall containerd
+sudo systemctl disable containerd
 ```
+
+Start containerd in a new terminal:
+
+```sh
+sudo containerd &
+```
+
+### Enable forwarding:
+
+> This is required to allow containers in containerd to access the Internet via your computer's primary network interface.
+
+```sh
+sudo /sbin/sysctl -w net.ipv4.conf.all.forwarding=1
+```
+
+Make the setting permanent:
+
+```
+echo "net.ipv4.conf.all.forwarding=1" | sudo tee -a /etc/sysctl.conf
+```
+
+### Get netns
+
+* From binaries:
+
+	```sh
+	# For x86_64
+	sudo curl -fSLs "https://github.com/genuinetools/netns/releases/download/v0.5.3/netns-linux-amd64" \
+	  -o "/usr/local/bin/netns" \
+	  && sudo chmod a+x "/usr/local/bin/netns"
+
+	# armhf
+	sudo curl -fSLs "https://github.com/genuinetools/netns/releases/download/v0.5.3/netns-linux-arm" \
+	  -o "/usr/local/bin/netns" \
+	  && sudo chmod a+x "/usr/local/bin/netns"
+
+	# arm64
+	sudo curl -fSLs "https://github.com/genuinetools/netns/releases/download/v0.5.3/netns-linux-arm64" \
+	  -o "/usr/local/bin/netns" \
+	  && sudo chmod a+x "/usr/local/bin/netns"
+	```
+
+* Or build from source:
+
+	```sh
+	export GOPATH=$HOME/go/
+
+	go get -u github.com/genuinetools/netns
+	sudo mv $GOPATH/bin/netns /usr/bin/
+	```
+
+### Build and run faas-containerd
+
+* Get a binary
+
+	```sh
+	# For x86_64
+	sudo curl -fSLs "https://github.com/alexellis/faas-containerd/releases/download/0.3.2/faas-containerd" \
+	  -o "/usr/local/bin/faas-containerd" \
+	  && sudo chmod a+x "/usr/local/bin/faas-containerd"
+
+	# armhf
+	sudo curl -fSLs "https://github.com/alexellis/faas-containerd/releases/download/0.3.2/faas-containerd-armhf" \
+	  -o "/usr/local/bin/faas-containerd" \
+	  && sudo chmod a+x "/usr/local/bin/faas-containerd"
+
+	# arm64
+	sudo curl -fSLs "https://github.com/alexellis/faas-containerd/releases/download/0.3.2/faas-containerd-arm64" \
+	  -o "/usr/local/bin/faas-containerd" \
+	  && sudo chmod a+x "/usr/local/bin/faas-containerd"
+	```
+
+* Or build from source
+
+	```sh
+	export GOPATH=$HOME/go/
+
+	mkdir -p $GOPATH/src/github.com/alexellis/faas-containerd
+	cd $GOPATH/src/github.com/alexellis/faas-containerd
+	git clone https://github.com/alexellis/faas-containerd
+	cd faas-containerd
+
+	go build && sudo service_timeout=1m ./faas-containerd
+	```
 
 > Listens on port TCP/8081
+
+## Test out your faas-containerd
 
 Get the OpenFaaS CLI:
 
@@ -141,62 +267,16 @@ echo "verbose" | faas-cli invoke nodeinfo -g 127.0.0.1:8081
 List containers with `ctr`:
 
 ```sh
-sudo ctr list --namespace openfaas-fn
+sudo ctr --namespace openfaas-fn list
 ```
 
-Delete containers or snapshots:
+Delete container, snapshot and task:
 
 ```sh
-sudo ctr --namespace openfaas-fn snapshot delete figlet
-sudo ctr --namespace openfaas-fn snapshot delete figlet-snapshot
-```
-
-* Appendix
-
-
-Install Go if a newer version is required (optional)
-
-```sh
-curl -SLsf https://dl.google.com/go/go1.12.14.linux-amd64.tar.gz > go.tgz
-sudo rm -rf /usr/local/go/
-sudo mkdir -p /usr/local/go/
-sudo tar -xvf go.tgz -C /usr/local/go/ --strip-components=1
-
-export GOPATH=$HOME/go/
-export PATH=$PATH:/usr/local/go/bin/
-
-go version
-```
-
-Deploy a container without a server
-
-```sh
-faas deploy --name uptime --image alexellis2/uptime:latest \
-  -g 127.0.0.1:8081 --update=true --replace=false
-```
-
-
-Create [networking configuration for CNI](https://github.com/containernetworking/cni/tree/master/cnitool)
-
-```sh
-$ mkdir -p /etc/cni/net.d
-$ cat >/etc/cni/net.d/10-mynet.conf <<EOF
-{
-	"cniVersion": "0.2.0",
-	"name": "mynet",
-	"type": "bridge",
-	"bridge": "cni0",
-	"isGateway": true,
-	"ipMasq": true,
-	"ipam": {
-		"type": "host-local",
-		"subnet": "10.22.0.0/16",
-		"routes": [
-			{ "dst": "0.0.0.0/0" }
-		]
-	}
-}
-EOF
+sudo ctr --namespace openfaas-fn task kill figlet
+sudo ctr --namespace openfaas-fn task delete figlet
+sudo ctr --namespace openfaas-fn container delete figlet
+sudo ctr --namespace openfaas-fn snapshot remove figlet-snapshot
 ```
 
 ## Links

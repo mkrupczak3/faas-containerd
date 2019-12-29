@@ -1,2 +1,6 @@
 /faas-containerd
 go*.gz
+.idea
+/resolv.conf
+/hosts
+/bin
